@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title> Store – In-Game Purchases</title>
+  <style>
+    :root { --neon: #0ff; --bg: #0e0e0e; }
+    body { margin: 0; background: var(--bg); font-family: 'Courier New', monospace; color: var(--neon); display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+    #vault-store { width: 600px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; padding: 20px; border: 8px solid var(--neon); border-radius: 20px; background: radial-gradient(circle, #333 40%, #000 100%); box-shadow: inset 0 0 30px var(--neon); }
+    .lock { display: flex; flex-direction: column; align-items: center; justify-content: center; border: 3px solid var(--neon); border-radius: 12px; background: #111; cursor: pointer; transition: 0.2s; }
+    .lock:hover { background: var(--neon); color: #000; }
+    .lock span { font-size: 30px; margin-bottom: 6px; }
+    .price { font-size: 14px; }
+    #overlay { position: fixed; top: 10px; right: 10px; padding: 8px 12px; background: #000a; color: var(--neon); border-radius: 6px; }
+  </style>
+</head>
+
+<body>
+
+  <!-- 5 Purchase Locks -->
+  <div id="vault-store">
+    <div class="lock" data-item="time"  data-price="1.99"><span>⏱️</span><div class="price">$1.99</div></div>
+    <div class="lock" data-item="ammo"  data-price="2.99"><span>🔫</span><div class="price">$2.99</div></div>
+    <div class="lock" data-item="speed" data-price="1.49"><span>🏃</span><div class="price">$1.49</div></div>
+    <div class="lock" data-item="vest"  data-price="3.99"><span>🛡️</span><div class="price">$3.99</div></div>
+    <div class="lock" data-item="exit"  data-price="4.99"><span>🚪</span><div class="price">$4.99</div></div>
+  </div>
+
+  <!-- Live Overlay -->
+  <div id="overlay">💰 $<span id="balance">0</span> • 🎒 <span id="items">0 items</span></div>
+
+  <!-- Monetization Layer -->
+  <script src="https://js.stripe.com/v3/"></script>
+  <script>
+    const STRIPE_PK = "pk_live_51PX7wJHC3Ge5lJDSol3tzF3NkDm2B7YHKiKCRUUtQTTWMHKFQWkcRDwnuww3A7fYLHpVpt1t41O87vXWfRKM4g8K00obmihvAh";       // ← replace with live key
+    const QR_URL    = "https://cash.app/$relli7?amount="; // ← replace with your tag
+    const stripe = Stripe(STRIPE_PK);
+
+    const PLAYER = { balance: 0, inventory: {} };
+
+    document.querySelectorAll('.lock').forEach(lock => {
+      lock.addEventListener('click', () => {
+        const item = lock.dataset.item;
+        const price = parseFloat(lock.dataset.price);
+
+        /* Stripe Checkout */
+        stripe.redirectToCheckout({
+          lineItems: [{
+            price_data: {
+              currency: 'usd',
+              unit_amount: price * 100,
+              product_data: { name: item }
+            },
+            quantity: 1
+          }],
+          mode: 'payment',
+          successUrl: window.location.href + '?paid=' + item,
+          cancelUrl: window.location.href
+        });
+      });
+    });
+
+    /* Auto-redeem after payment */
+    const params = new URLSearchParams(window.location.search);
+    const item = params.get('paid');
+    if (item) {
+      PLAYER.inventory[item] = (PLAYER.inventory[item] || 0) + 1;
+      PLAYER.balance += parseFloat({time:1.99,ammo:2.99,speed:1.49,vest:3.99,exit:4.99}[item]);
+      localStorage.setItem('vaultInventory', JSON.stringify(PLAYER.inventory));
+      alert(`✅ ${item} added!`);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    /* Show QR on 'Q' key */
+    document.addEventListener('keydown', (e) => {
+      if (e.key.toLowerCase() === 'q') {
+        const modal = document.createElement('div');
+        modal.style = `
+          position:fixed; inset:0; background:#000c; display:flex; align-items:center; justify-content:center; z-index:9999
+        `;
+        modal.innerHTML = `
+          <div style="background:#111; border:3px solid #0ff; padding:20px; border-radius:12px; text-align:center;">
+            <h3>Scan to pay</h3>
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(QR_URL + '1.99&note=VaultItem')}" alt="QR">
+            <br><button onclick="modal.remove()" style="margin-top:10px;">Close</button>
+          </div>
+        `;
+        document.body.appendChild(modal);
+      }
+    });
+
+    /* Overlay refresh */
+    setInterval(() => {
+      const inv = JSON.parse(localStorage.getItem('vaultInventory') || '{}');
+      document.getElementById('items').textContent = Object.keys(inv).length + ' items';
+      document.getElementById('balance').textContent = Object.values(inv).reduce((t,k) => t + {time:1.99,ammo:2.99,speed:1.49,vest:3.99,exit:4.99}[k], 0).toFixed(2);
+    }, 1000);
+  </script>
+
+</body>
+</html>
