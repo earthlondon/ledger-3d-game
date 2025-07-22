@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>The Doubler - Mansion Escape (PvC)</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/p5.min.js"></script>
+  <style>
+    body { margin: 0; display: flex; justify-content: center; align-items: center; background: black; }
+    canvas { display: block; }
+    #vault-store { 
+      display: none; 
+      position: fixed; 
+      top: 50%; 
+      left: 50%; 
+      transform: translate(-50%, -50%); 
+      z-index: 999; 
+      width: 600px; 
+      height: 400px; 
+      background: #111 url('https://i.imgur.com/IApRfYP.png') no-repeat center center; 
+      background-size: cover; 
+      border: 4px solid #0ff; 
+      border-radius: 12px; 
+      padding: 20px; 
+    }
+    #vault-store button { 
+      padding: 12px; 
+      font-size: 16px; 
+      cursor: pointer; 
+      display: flex; 
+      align-items: center; 
+      justify-content: center; 
+      flex-direction: column; 
+    }
+    #vault-store img { 
+      width: 48px; 
+      height: 48px; 
+      margin-bottom: 8px; 
+    }
+    #overlay { 
+      position: fixed; 
+      top: 10px; 
+      right: 10px; 
+      background: #000a; 
+      color: #0ff; 
+      padding: 8px 12px; 
+      border-radius: 6px; 
+    }
+  </style>
+</head>
+<body>
+<script>
+let maze = [];
+let mazeWidth = 15, mazeHeight = 15;
+let cellSize = 20;
+let invader = [
+  { x: 1.5, y: 1.5, angle: 0, name: "NPC_Invader1", ammo: 3 },
+  { x: 3.5, y: 3.5, angle: 0, name: "NPC_Invader2", ammo: 3 },
+  { x: 5.5, y: 5.5, angle: 0, name: "NPC_Invader3", ammo: 3 }
+];
+let currentInvader = 0;
+let doubler = { x: mazeWidth - 1.5, y: mazeHeight - 1.5, angle: 0, name: "Doubler", ammo: 3, speedBoost: 1, hasVest: false };
+let exit = { x: mazeWidth / 2, y: mazeHeight / 2, revealed: false };
+let timeling = null;
+let timelingChaseTime = 0;
+let timelingSoundPlayed = false;
+let showMap = true;
+let doublerScore = 0, invaderScore = 0;
+let investedAmount = 103;
+let betAmount = 100, invaderBet = 3;
+let gameMode = "PvC";
+let numInvaders = 3;
+let projectiles = [];
+let lastShot = 0;
+let lastUpPress = 0;
+let doublePressTime = 300;
+let gameStarted = false;
+let moderatorView = true;
+let gameStartTime = 0;
+let timeLimit = 180000;
+let doorTimers = {};
+let leaderboards = { invaders: [], doublers: [], money: [] };
+let wallTextures = [], roomWallTextures = [], doorTextures = [], paintingTexture, painting2Texture, moneyBagTexture, exitTexture, projectileTexture, timelingTexture, doublerTexture, invaderTexture;
+let speedIcon, vestIcon, ammoIcon, compassIcon, investmentIcon;
+let texturesLoaded = false;
+let projectileRooms = [];
+
+function preload() {
+  let loadTexture = (url, fallbackColor) => {
+    let img = createGraphics(64, 64);
+    img.fill(fallbackColor);
+    img.rect(0, 0, 64, 64);
+    try {
+      let loadedImg = loadImage(url, () => console.log(`Loaded: ${url}`), () => {
+        console.error(`Failed to load: ${url}, using fallback`);
+        return img;
+      });
+      return loadedImg;
+    } catch (e) {
+      console.error(`Exception loading ${url}: ${e}`);
+      return img;
+    }
+  };
+  wallTextures.push(loadTexture('https://i.imgur.com/nqEko7m.png', color(128, 128, 128)));
+  wallTextures.push(loadTexture('https://i.imgur.com/g30Gvra.png', color(128, 128, 128)));
+  wallTextures.push(loadTexture('https://i.imgur.com/CekpCDR.png', color(128, 128, 128)));
+  wallTextures.push(loadTexture('https://i.imgur.com/pCHH2Y8.png', color(0, 0, 255)));
+  wallTextures.push(loadTexture('https://i.imgur.com/TPOVM2k.png', color(255, 0, 0)));
+  roomWallTextures.push(loadTexture('https://i.imgur.com/rH6ntHg.png', color(100, 100, 100)));
+  roomWallTextures.push(loadTexture('https://i.imgur.com/tBb1GmT.png', color(100, 100, 100)));
+  roomWallTextures.push(loadTexture('https://i.imgur.com/IApRfYP.png', color(100, 100, 100)));
+  roomWallTextures.push(loadTexture('https://i.imgur.com/nqEko7m.png', color(255, 215, 0)));
+  doorTextures.push(loadTexture('https://i.imgur.com/M8hl5TZ.png', color(139, 69, 19)));
+  doorTextures.push(loadTexture('https://i.imgur.com/uDvRIe4.png', color(169, 169, 169)));
+  paintingTexture = loadTexture('https://i.imgur.com/RMTDNyo.png', color(200, 150, 0));
+  painting2Texture = loadTexture('https://i.imgur.com/v4WuR4f.png', color(128, 0, 128));
+  moneyBagTexture = loadTexture('https://i.imgur.com/RMTDNyo.png', color(0, 255, 0));
+  exitTexture = loadTexture('https://i.imgur.com/uCCqbba.png', color(255, 255, 0));
+  projectileTexture = loadTexture('https://i.imgur.com/zzXzebn.png', color(255, 0, 0));
+  timelingTexture = loadTexture('https://i.imgur.com/K6diEqQ.png', color(128, 0, 128));
+  doublerTexture = loadTexture('https://i.imgur.com/MZhEG6O.png', color(0, 255, 0));
+  invaderTexture = loadTexture('https://i.imgur.com/ekDF3VP.png', color(0, 0, 255));
+  speedIcon = loadTexture('https://i.imgur.com/x27sCkf.png', color(255, 165, 0));
+  vestIcon = loadTexture('https://i.imgur.com/8OBN3Vp.png', color(0, 128, 0));
+  ammoIcon = loadTexture('https://i.imgur.com/nFv1r3V.png', color(255, 0, 0));
+  compassIcon = loadTexture('https://i.imgur.com/AZx0cJl.png', color(255, 255, 0));
+  investmentIcon = loadTexture('https://i.imgur.com/atPkDg1.png', color(0, 255, 255));
+}
+
+function setup() {
+  createCanvas(800, 600);
+  frameRate(30);
+  inventory = JSON.parse(localStorage.getItem('vaultInventory')) || {};
+  balance = Object.entries(inventory).reduce((sum, [item, count]) => sum + count * ({time:1.99, ammo:2.99, speed:1.49, vest:3.99, exit:4.99, investment:5.99}[item] || 0), 0);
+  setTimeout(() => {
+    texturesLoaded = true;
+    doubler.name = prompt("Enter Doubler's name:", "Doubler") || "Doubler";
+    generateMaze();
+    console.log(`Setup: doubler=${doubler.name}, invaders=${invader.map(i => i.name).join(", ")}, mode=${gameMode}, bet=${betAmount}`);
+    updateStoreIcons();
+  }, 5000);
+}
+
+function updateStoreIcons() {
+  const buttons = [
+    { id: 'time', icon: null, label: '⏱️ Time<br>$1.99' },
+    { id: 'ammo', icon: ammoIcon, label: 'Ammo<br>$2.99' },
+    { id: 'speed', icon: speedIcon, label: 'Speed<br>$1.49' },
+    { id: 'vest', icon: vestIcon, label: 'Vest<br>$3.99' },
+    { id: 'exit', icon: compassIcon, label: 'Compass<br>$4.99' },
+    { id: 'investment', icon: investmentIcon, label: 'Investment<br>$5.99' }
+  ];
+  const storeDiv = document.querySelector('#vault-store > div');
+  storeDiv.innerHTML = '';
+  buttons.forEach(btn => {
+    const button = document.createElement('button');
+    button.className = 'lock-btn';
+    button.dataset.item = btn.id;
+    button.dataset.price = btn.label.match(/\$([\d.]+)/)[1];
+    if (btn.icon) {
+      const img = document.createElement('img');
+      img.src = btn.icon.canvas.toDataURL();
+      button.appendChild(img);
+    } else {
+      button.innerHTML = btn.label;
+    }
+    if (btn.id !== 'time') {
+      const label = document.createElement('span');
+      label.innerHTML = btn.label;
+      button.appendChild(label);
+    }
+    storeDiv.appendChild(button);
+  });
+  const closeButton = document.createElement('button');
+  closeButton.innerHTML = 'Close';
+  closeButton.onclick = closeStore;
+  storeDiv.appendChild(closeButton);
+  document.querySelectorAll('.lock-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const item = btn.dataset.item;
+      const price = parseFloat(btn.dataset.price);
+      stripe.redirectToCheckout({
+        lineItems: [{
+          price_data: { currency: 'usd', unit_amount: Math.round(price * 100), product_data: { name: item } },
+          quantity: 1
+        }],
+        mode: 'payment',
+        successUrl: window.location.href + '?paid=' + item,
+        cancelUrl: window.location.href
+      });
+    });
+  });
+}
+
+function generateMaze() {
+  maze = [];
+  let doorCount = 0;
+  let rooms = [];
+  projectileRooms = [];
+  for (let y = 0; y < mazeHeight; y++) {
+    maze[y] = [];
+    for (let x = 0; x < mazeWidth; x++) {
+      let textureIndex;
+      if (x < mazeWidth / 2 && y >= mazeHeight / 2) textureIndex = 0;
+      else if (x >= mazeWidth / 2 && y >= mazeHeight / 2) textureIndex = 1;
+      else if (x < mazeWidth / 2 && y < mazeHeight / 2) textureIndex = 2;
+      else textureIndex = 3;
+      if (x === floor(exit.x) && y === floor(exit.y)) textureIndex = 4;
+      maze[y][x] = { north: true, south: true, east: true, west: true, visited: false, isDoor: false, isOpen: false, hasPainting: false, paintingType: 0, doorId: null, textureIndex, roomId: null, hasProjectiles: false };
+    }
+  }
+  let roomCount = 0;
+  while (roomCount < 20) {
+    let rx = floor(random(2, mazeWidth - 2));
+    let ry = floor(random(2, mazeHeight - 2));
+    let valid = true;
+    for (let r of rooms) {
+      if (abs(rx - r.x) < 2 && abs(ry - r.y) < 2) valid = false;
+    }
+    if (valid && !(rx === floor(exit.x) && ry === floor(exit.y))) {
+      for (let dy = 0; dy < 2; dy++) {
+        for (let dx = 0; dx < 2; dx++) {
+          if (dx === 0) maze[ry + dy][rx].west = false;
+          if (dx === 1) maze[ry + dy][rx + 1].east = false;
+          if (dy === 0) maze[ry][rx + dx].north = false;
+          if (dy === 1) maze[ry + 1][rx + dx].south = false;
+          maze[ry + dy][rx + dx].roomId = roomCount;
+          maze[ry + dy][rx + dx].textureIndex = floor(roomCount / 7);
+        }
+      }
+      if (doorCount < 40) {
+        let entryX = rx - 1, entryY = ry;
+        if (entryX >= 0 && !maze[entryY][entryX].isDoor) {
+          maze[entryY][entryX].isDoor = true;
+          maze[entryY][entryX].doorId = 101 + doorCount++;
+          doorTimers[maze[entryY][entryX].doorId] = millis() + 30000;
+        }
+        let exitX = rx + 2, exitY = ry + 1;
+        if (exitX < mazeWidth && !maze[exitY][exitX].isDoor) {
+          maze[exitY][exitX].isDoor = true;
+          maze[exitY][exitX].doorId = 101 + doorCount++;
+          doorTimers[maze[exitY][exitX].doorId] = millis() + 30000;
+        }
+      }
+      if (random() < 0.25 && projectileRooms.length < 5) {
+        projectileRooms.push({ x: rx, y: ry });
+        for (let dy = 0; dy < 2; dy++) {
+          for (let dx = 0; dx < 2; dx++) {
+            maze[ry + dy][rx + dx].hasProjectiles = true;
+            maze[ry + dy][rx + dx].textureIndex = 3;
+          }
+        }
+      }
+      rooms.push({ x: rx, y: ry, id: roomCount });
+      roomCount++;
+    }
+  }
+  let stack = [{ x: floor(doubler.x), y: floor(doubler.y) }];
+  maze[floor(doubler.y)][floor(doubler.x)].visited = true;
+  let target = { x: floor(exit.x), y: floor(exit.y) };
+  while (stack.length > 0) {
+    let current = stack[stack.length - 1];
+    let neighbors = getUnvisitedNeighbors(current.x, current.y);
+    if (current.x === target.x && current.y === target.y) break;
+    if (neighbors.length === 0) {
+      stack.pop();
+    } else {
+      let next = random(neighbors);
+      removeWall(current, next);
+      maze[next.y][next.x].visited = true;
+      stack.push(next);
+    }
+  }
+  for (let y = 0; y < mazeHeight; y++) {
+    for (let x = 0; x < mazeWidth; x++) {
+      if (!maze[y][x].visited && !(x === floor(exit.x) && y === floor(exit.y))) {
+        let neighbors = getUnvisitedNeighbors(x, y);
+        if (neighbors.length > 0) {
+          let next = random(neighbors);
+          removeWall({ x, y }, next);
+          maze[y][x].visited = true;
+        }
+      }
+    }
+  }
+  maze[floor(exit.y)][floor(exit.x)].north = false;
+  for (let y = 0; y < mazeHeight; y++) {
+    for (let x = 0; x < mazeWidth; x++) {
+      if (dist(x, y, exit.x, exit.y) < 4 && random() < 0.5 && !(x === floor(exit.x) && y === floor(exit.y))) {
+        maze[y][x].hasPainting = true;
+        maze[y][x].paintingType = random() < 0.5 ? 0 : 1;
+      }
+    }
+  }
+  console.log("Room assignments:", rooms.map(r => `Room ${r.id}: (${r.x},${r.y}), Texture ${maze[r.y][r.x].textureIndex}`));
+  console.log("Projectile rooms:", projectileRooms);
+  console.log("Doors:", doorCount);
+}
+
+function getUnvisitedNeighbors(x, y) {
+  let neighbors = [];
+  if (y > 0 && !maze[y - 1][x].visited) neighbors.push({ x, y: y - 1 });
+  if (y < mazeHeight - 1 && !maze[y + 1][x].visited) neighbors.push({ x, y: y + 1 });
+  if (x < mazeWidth - 1 && !maze[y][x + 1].visited) neighbors.push({ x: x + 1, y });
+  if (x > 0 && !maze[y][x - 1].visited) neighbors.push({ x: x - 1, y });
+  return neighbors;
+}
+
+function removeWall(current, next) {
+  let dx = next.x - current.x;
+  let dy = next.y - current.y;
+  if (dx === 1) {
+    maze[current.y][current.x].east = false;
+    maze[next.y][next.x].west = false;
+  } else if (dx === -1) {
+    maze[current.y][current.x].west = false;
+    maze[next.y][next.x].east = false;
+  } else if (dy === 1) {
+    maze[current.y][current.x].south = false;
+    maze[next.y][next.x].north = false;
+  } else if (dy === -1) {
+    maze[current.y][current.x].north = false;
+    maze[next.y][next.x].south = false;
+  }
+}
+
+function aStar(start, goal) {
+  let openSet = [{ x: start.x, y: start.y, g: 0, h: heuristic(start, goal), f: heuristic(start, goal), path: [] }];
+  let closedSet = [];
+  while (openSet.length > 0) {
+    let current = openSet.reduce((a, b) => a.f < b.f ? a : b);
+    if (current.x === goal.x && current.y === goal.y) {
+      return current.path.concat([{ x: current.x, y: current.y }]);
+    }
+    openSet = openSet.filter(node => node !== current);
+    closedSet.push(current);
+    let neighbors = [
+      { x: current.x, y: current.y - 1, dir: 'north' },
+      { x: current.x, y: current.y + 1, dir: 'south' },
+      { x: current.x + 1, y: current.y, dir: 'east' },
+      { x: current.x - 1, y: current.y, dir: 'west' }
+    ];
+    for (let neighbor of neighbors) {
+      if (neighbor.x < 0 || neighbor.x >= mazeWidth || neighbor.y < 0 || neighbor.y >= mazeHeight) continue;
+      if (closedSet.some(node => node.x === neighbor.x && node.y === neighbor.y)) continue;
+      let cell = maze[neighbor.y][neighbor.x];
+      let isBlocked = (neighbor.dir === 'north' && cell.south && (!cell.isDoor || !cell.isOpen)) ||
+                      (neighbor.dir === 'south' && cell.north && (!cell.isDoor || !cell.isOpen)) ||
+                      (neighbor.dir === 'east' && cell.west && (!cell.isDoor || !cell.isOpen)) ||
+                      (neighbor.dir === 'west' && cell.east && (!cell.isDoor || !cell.isOpen));
+      if (isBlocked) continue;
+      let g = current.g + 1;
+      let h = heuristic(neighbor, goal);
+      let f = g + h;
+      let existing = openSet.find(node => node.x === neighbor.x && node.y === neighbor.y);
+      if (!existing || f < existing.f) {
+        if (existing) openSet = openSet.filter(node => node !== existing);
+        openSet.push({ x: neighbor.x, y: neighbor.y, g, h, f, path: current.path.concat([{ x: current.x, y: current.y }]) });
+      }
+    }
+  }
+  return [];
+}
+
+function heuristic(a, b) {
+  return abs(a.x - b.x) + abs(a.y - b.y);
+}
+
+function draw() {
+  if (!texturesLoaded) {
+    background(0);
+    fill(255);
+    textSize(20);
+    text("Loading textures...", 350, 300);
+    return;
+  }
+  background(0);
+  if (!gameStarted) {
+    fill(255);
+    textSize(20);
+    text("Press Enter to start the game!", 200, 300);
+    text("Leaderboard:", 200, 340);
+    textSize(16);
+    text("Top Invaders: " + leaderboards.invaders.slice(0, 5).map(p => `${p.name}: ${p.wins}`).join(", "), 200, 360);
+    text("Top Doublers: " + leaderboards.doublers.slice(0, 5).map(p => `${p.name}: ${p.wins}`).join(", "), 200, 380);
+    text("Top Earners: " + leaderboards.money.slice(0, 5).map(p => `${p.name}: $${p.amount.toFixed(2)}`).join(", "), 200, 400);
+    text(`Mode: ${gameMode}, Doubler Bet: $${betAmount}, Invaders: ${numInvaders}`, 200, 420);
+    text("Press V to open Vault Store", 200, 440);
+    return;
+  }
+  push();
+  translate(0, 0);
+  draw3DView(invader[currentInvader], 0, 0, 400, 400, true);
+  if (showMap) drawMap(invader[currentInvader], 0, 400, 200, 50);
+  pop();
+  push();
+  translate(400, 0);
+  draw3DView(doubler, 0, 0, 400, 400, false);
+  if (showMap) drawMap(doubler, 0, 400, 200, 50);
+  pop();
+  if (moderatorView) {
+    push();
+    translate(300, 400);
+    drawModeratorMap(0, 0, 200, 200);
+    pop();
+  }
+  fill(255);
+  textSize(16);
+  text(`Thief Score: ${invaderScore}`, 10, 20);
+  text(`Doubler Score: ${doublerScore}`, 410, 20);
+  image(moneyBagTexture, 10, 25, 16, 16);
+  text(`Pot: $${investedAmount.toFixed(2)}`, 30, 40);
+  text(`Invader ${currentInvader + 1}/${numInvaders}: ${invader[currentInvader].name} (Ammo: ${invader[currentInvader].ammo})`, 10, 60);
+  text(`Doubler: ${doubler.name} (Ammo: ${doubler.ammo}${doubler.hasVest ? ', Vest' : ''})`, 410, 40);
+  let timeLeft = max(0, (timeLimit - (millis() - gameStartTime)) / 1000);
+  text(`Time: ${floor(timeLeft)}s`, 10, 80);
+  updatePlayers();
+  updateNPCInvaders();
+  updateProjectiles();
+  checkCollision();
+  checkExit();
+  checkTimeLimit();
+  updateDoorTimers();
+}
+
+function draw3DView(player, x, y, w, h, isInvader) {
+  let rays = 60;
+  let fov = PI / 3;
+  let rayAngleStep = fov / rays;
+  fill(200, 200, 200);
+  rect(x, y + h / 2, w, h / 2);
+  fill(150, 150, 150);
+  rect(x, y, w, h / 2);
+  for (let i = 0; i < rays; i++) {
+    let rayAngle = player.angle - fov / 2 + i * rayAngleStep;
+    let { distance, wallX, hasPainting, paintingType, isDoor, isOpen, doorId, cellX, cellY } = castRay(player.x, player.y, rayAngle);
+    let wallHeight = (h / distance) * 2;
+    let lineX = x + (i * w) / rays;
+    let texture = hasPainting ? (paintingType === 0 ? paintingTexture : painting2Texture) : (isDoor && !isOpen ? (doorId <= 120 ? doorTextures[0] : doorTextures[1]) : (cellX >= 0 && cellY >= 0 && cellX < mazeWidth && cellY < mazeHeight ? (maze[cellY][cellX].roomId != null ? roomWallTextures[maze[cellY][cellX].textureIndex] : wallTextures[maze[cellY][cellX].textureIndex]) : wallTextures[0]));
+    let textureX = floor(wallX * (texture.width || 64)) % (texture.width || 64);
+    image(texture, lineX, y + (h - wallHeight) / 2, w / rays + 1, wallHeight, textureX, 0, 1, texture.height || 64);
+    if (isDoor && !isOpen && distance < 2) {
+      fill(doorId <= 120 ? color(255, 255, 0) : 255);
+      textSize(16);
+      textAlign(CENTER);
+      text(doorId, lineX, y + h / 2 - 10);
+    }
+  }
+  let targets = isInvader ? [doubler] : invader.concat([exit]);
+  let targetTextures = isInvader ? [doublerTexture] : [invaderTexture, invaderTexture, invaderTexture, exitTexture];
+  for (let i = 0; i < targets.length; i++) {
+    let target = targets[i];
+    if (!target || (target === exit && !isInvader)) continue;
+    let dx = target.x - player.x;
+    let dy = target.y - player.y;
+    let targetAngle = atan2(dy, dx) - player.angle;
+    if (abs(targetAngle) < fov / 2) {
+      let targetDist = sqrt(dx * dx + dy * dy);
+      if (targetDist < 10) {
+        let targetHeight = (h / targetDist) * 2;
+        let targetScreenX = x + (w / 2) + (tan(targetAngle) * w / fov);
+        let textureIndex = isInvader ? 0 : (i < 3 ? 0 : 1);
+        image(targetTextures[textureIndex], targetScreenX - targetHeight / 4, y + (h - targetHeight) / 2, targetHeight / 2, targetHeight);
+      }
+    }
+  }
+  for (let p of projectiles) {
+    let dx = p.x - player.x;
+    let dy = p.y - player.y;
+    let angle = atan2(dy, dx) - player.angle;
+    if (abs(angle) < fov / 2) {
+      let dist = sqrt(dx * dx + dy * dy);
+      if (dist < 10) {
+        let height = (h / dist) * 2;
+        let screenX = x + (w / 2) + (tan(angle) * w / fov);
+        image(projectileTexture, screenX - height / 8, y + (h - height) / 2, height / 4, height / 4);
+      }
+    }
+  }
+  if (timeling && millis() - timelingChaseTime < 30000) {
+    let dx = timeling.x - player.x;
+    let dy = timeling.y - player.y;
+    let angle = atan2(dy, dx) - player.angle;
+    if (abs(angle) < fov / 2) {
+      let dist = sqrt(dx * dx + dy * dy);
+      if (dist < 10) {
+        let height = (h / dist) * 2;
+        let screenX = x + (w / 2) + (tan(angle) * w / fov);
+        image(timelingTexture, screenX - height / 4, y + (h - height) / 2, height / 2, height);
+        if (dist < 0.5) {
+          let angleToTimeling = atan2(dy, dx);
+          let angleDiff = abs(angleToTimeling - player.angle);
+          if (angleDiff > TWO_PI) angleDiff -= TWO_PI;
+          if (angleDiff < PI / 6) {
+            investedAmount = 0;
+            resetRound();
+          }
+        }
+      }
+    }
+  }
+}
+
+function castRay(x, y, angle) {
+  let stepSize = 0.01;
+  let maxDistance = 20;
+  let distance = 0;
+  let wallX, hasPainting = false, paintingType = 0, isDoor = false, isOpen = false, doorId = null, cellX = 0, cellY = 0;
+  let minDistance = maxDistance;
+  let closestHit = null;
+  while (distance < maxDistance) {
+    distance += stepSize;
+    let testX = x + cos(angle) * distance;
+    let testY = y + sin(angle) * distance;
+    cellX = floor(testX);
+    cellY = floor(testY);
+    if (cellX < 0 || cellX >= mazeWidth || cellY < 0 || cellY >= mazeHeight) {
+      break;
+    }
+    let cell = maze[cellY][cellX];
+    let fracX = testX - cellX;
+    let fracY = testY - cellY;
+    if (cell.north && fracY < 0.1 && (!cell.isDoor || !cell.isOpen)) {
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestHit = { distance, wallX: fracX, hasPainting: cell.hasPainting, paintingType: cell.paintingType, isDoor: cell.isDoor, isOpen: cell.isOpen, doorId: cell.doorId, cellX, cellY };
+      }
+    }
+    if (cell.south && fracY > 0.9 && (!cell.isDoor || !cell.isOpen)) {
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestHit = { distance, wallX: fracX, hasPainting: cell.hasPainting, paintingType: cell.paintingType, isDoor: cell.isDoor, isOpen: cell.isOpen, doorId: cell.doorId, cellX, cellY };
+      }
+    }
+    if (cell.east && fracX > 0.9 && (!cell.isDoor || !cell.isOpen)) {
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestHit = { distance, wallX: fracY, hasPainting: cell.hasPainting, paintingType: cell.paintingType, isDoor: cell.isDoor, isOpen: cell.isOpen, doorId: cell.doorId, cellX, cellY };
+      }
+    }
+    if (cell.west && fracX < 0.1 && (!cell.isDoor || !cell.isOpen)) {
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestHit = { distance, wallX: fracY, hasPainting: cell.hasPainting, paintingType: cell.paintingType, isDoor: cell.isDoor, isOpen: cell.isOpen, doorId: cell.doorId, cellX, cellY };
+      }
+    }
+  }
+  return closestHit || { distance: maxDistance, wallX: 0, hasPainting, paintingType, isDoor, isOpen, doorId, cellX, cellY };
+}
+
+function drawMap(player, x, y, w, h) {
+  let cellW = w / mazeWidth;
+  let cellH = h / mazeHeight;
+  let radius = 3;
+  stroke(255);
+  noFill();
+  for (let y = 0; y < mazeHeight; y++) {
+    for (let x = 0; x < mazeWidth; x++) {
+      if (dist(x, y, player.x, player.y) > radius) continue;
+      let cx = x * cellW;
+      let cy = y * cellH;
+      if (maze[y][x].north && !maze[y][x].isDoor) line(cx, cy, cx + cellW, cy);
+      if (maze[y][x].south && !maze[y][x].isDoor) line(cx, cy + cellH, cx + cellW, cy + cellH);
+      if (maze[y][x].east && !maze[y][x].isDoor) line(cx + cellW, cy, cx + cellW, cy + cellH);
+      if (maze[y][x].west && !maze[y][x].isDoor) line(cx, cy, cx, cy + cellH);
+      if (maze[y][x].isDoor) {
+        fill(maze[y][x].isOpen ? 0 : (maze[y][x].doorId <= 120 ? 139 : 169), maze[y][x].isOpen ? 0 : (maze[y][x].doorId <= 120 ? 69 : 169), maze[y][x].isOpen ? 0 : (maze[y][x].doorId <= 120 ? 19 : 169));
+        rect(cx + 2, cy + 2, cellW - 4, cellH - 4);
+        if (!maze[y][x].isOpen) {
+          fill(255);
+          textSize(8);
+          textAlign(CENTER);
+          text(maze[y][x].doorId, cx + cellW / 2, cy + cellH / 2);
+        }
+        noFill();
+      }
+      if (maze[y][x].hasPainting) {
+        fill(maze[y][x].paintingType === 0 ? 200 : 128, maze[y][x].paintingType === 0 ? 150 : 0, maze[y][x].paintingType === 0 ? 0 : 128);
+        rect(cx + 4, cy + 4, cellW - 8, cellH - 8);
+        noFill();
+      }
+      if (maze[y][x].hasProjectiles) {
+        fill(255, 215, 0);
+        ellipse(cx + cellW / 2, cy + cellH / 2, 5, 5);
+        noFill();
+      }
+      if (player === doubler && exit.revealed && x === floor(exit.x) && y === floor(exit.y)) {
+        fill(255, 255, 0);
+        ellipse(cx + cellW / 2, cy + cellH / 2, 5, 5);
+        noFill();
+      }
+    }
+  }
+  fill(0, 0, 255);
+  for (let i = 0; i < numInvaders; i++) {
+    if (dist(invader[i].x, invader[i].y, player.x, player.y) <= radius) {
+      ellipse(invader[i].x * cellW, invader[i].y * cellH, 5, 5);
+    }
+  }
+  fill(0, 255, 0);
+  if (dist(doubler.x, doubler.y, player.x, player.y) <= radius) {
+    ellipse(doubler.x * cellW, doubler.y * cellH, 5, 5);
+  }
+}
+
+function drawModeratorMap(x, y, w, h) {
+  let cellW = w / mazeWidth;
+  let cellH = h / mazeHeight;
+  stroke(255);
+  noFill();
+  for (let y = 0; y < mazeHeight; y++) {
+    for (let x = 0; x < mazeWidth; x++) {
+      let cx = x * cellW;
+      let cy = y * cellH;
+      if (maze[y][x].north && !maze[y][x].isDoor) line(cx, cy, cx + cellW, cy);
+      if (maze[y][x].south && !maze[y][x].isDoor) line(cx, cy + cellH, cx + cellW, cy + cellH);
+      if (maze[y][x].east && !maze[y][x].isDoor) line(cx + cellW, cy, cx + cellW, cy + cellH);
+      if (maze[y][x].west && !maze[y][x].isDoor) line(cx, cy, cx, cy + cellH);
+      if (maze[y][x].isDoor) {
+        fill(maze[y][x].isOpen ? 0 : (maze[y][x].doorId <= 120 ? 139 : 169), maze[y][x].isOpen ? 0 : (maze[y][x].doorId <= 120 ? 69 : 169), maze[y][x].isOpen ? 0 : (maze[y][x].doorId <= 120 ? 19 : 169));
+        rect(cx + 2, cy + 2, cellW - 4, cellH - 4);
+        if (!maze[y][x].isOpen) {
+          fill(255);
+          textSize(8);
+          textAlign(CENTER);
+          text(maze[y][x].doorId, cx + cellW / 2, cy + cellH / 2);
+        }
+        noFill();
+      }
+      if (maze[y][x].hasPainting) {
+        fill(maze[y][x].paintingType === 0 ? 200 : 128, maze[y][x].paintingType === 0 ? 150 : 0, maze[y][x].paintingType === 0 ? 0 : 128);
+        rect(cx + 4, cy + 4, cellW - 8, cellH - 8);
+        noFill();
+      }
+      if (maze[y][x].hasProjectiles) {
+        fill(255, 215, 0);
+        ellipse(cx + cellW / 2, cy + cellH / 2, 5, 5);
+        noFill();
+      }
+      if (x === floor(exit.x) && y === floor(exit.y)) {
+        fill(255, 255, 0);
+        ellipse(cx + cellW / 2, cy + cellH / 2, 5, 5);
+        noFill();
+      }
+    }
+  }
+  fill(0, 0, 255);
+  for (let i = 0; i < numInvaders; i++) {
+    ellipse(invader[i].x * cellW, invader[i].y * cellH, 5, 5);
+  }
+  fill(0, 255, 0);
+  ellipse(doubler.x * cellW, doubler.y * cellH, 5, 5);
+}
+
+function applyItem(item) {
+  if (!inventory[item] || inventory[item] <= 0) return;
+  inventory[item]--;
+  if (inventory[item] <= 0) delete inventory[item];
+  localStorage.setItem('vaultInventory', JSON.stringify(inventory));
+  switch (item) {
+    case 'time':
+      timeLimit += 30000;
+      break;
+    case 'ammo':
+      doubler.ammo = min(doubler.ammo + 3, 5);
+      break;
+    case 'speed':
+      doubler.speedBoost = 1.5;
+      setTimeout(() => doubler.speedBoost = 1, 30000);
+      break;
+    case 'vest':
+      doubler.hasVest = true;
+      break;
+    case 'exit':
+      exit.revealed = true;
+      break;
+    case 'investment':
+      investedAmount += 10;
+      break;
+  }
+  balance = Object.entries(inventory).reduce((sum, [item, count]) => sum + count * ({time:1.99, ammo:2.99, speed:1.49, vest:3.99, exit:4.99, investment:5.99}[item] || 0), 0);
+}
+
+function updatePlayers() {
+  if (!gameStarted) return;
+  let baseSpeed = 0.05;
+  let turnSpeed = 0.05;
+  if (keyIsDown(UP_ARROW)) {
+    movePlayer(doubler, baseSpeed * doubler.speedBoost);
+    let now = millis();
+    if (now - lastUpPress < doublePressTime) {
+      burstThroughDoor(doubler);
+    }
+    lastUpPress = now;
+  }
+  if (keyIsDown(DOWN_ARROW)) movePlayer(doubler, -baseSpeed * doubler.speedBoost);
+  if (keyIsDown(LEFT_ARROW)) doubler.angle -= turnSpeed;
+  if (keyIsDown(RIGHT_ARROW)) doubler.angle += turnSpeed;
+  if (keyIsDown(32) && millis() - lastShot > 1000 && doubler.ammo > 0) {
+    projectiles.push({
+      x: doubler.x,
+      y: doubler.y,
+      angle: doubler.angle,
+      distance: 0,
+      owner: 'doubler'
+    });
+    doubler.ammo--;
+    lastShot = millis();
+  }
+  if (keyIsDown(84)) applyItem('time'); // T
+  if (keyIsDown(65)) applyItem('ammo'); // A
+  if (keyIsDown(83)) applyItem('speed'); // S
+  if (keyIsDown(86)) applyItem('vest'); // V
+  if (keyIsDown(69)) applyItem('exit'); // E
+  if (keyIsDown(73)) applyItem('investment'); // I
+  checkProjectilePickup(doubler);
+}
+
+function updateNPCInvaders() {
+  let speed = 0.05;
+  for (let i = 0; i < numInvaders; i++) {
+    let inv = invader[i];
+    let path = aStar({ x: floor(inv.x), y: floor(inv.y) }, { x: floor(doubler.x), y: floor(doubler.y) });
+    if (path.length > 1) {
+      let next = path[1];
+      let dx = next.x + 0.5 - inv.x;
+      let dy = next.y + 0.5 - inv.y;
+      inv.angle = atan2(dy, dx);
+      movePlayer(inv, speed);
+      burstThroughDoor(inv);
+    }
+    if (millis() - lastShot > random(2000, 3000) && inv.ammo > 0) {
+      projectiles.push({
+        x: inv.x,
+        y: inv.y,
+        angle: inv.angle,
+        distance: 0,
+        owner: 'invader'
+      });
+      inv.ammo--;
+      lastShot = millis();
+    }
+    checkProjectilePickup(inv);
+  }
+}
+
+function checkProjectilePickup(player) {
+  let cellX = floor(player.x);
+  let cellY = floor(player.y);
+  if (cellX >= 0 && cellX < mazeWidth && cellY >= 0 && cellY < mazeHeight && maze[cellY][cellX].hasProjectiles) {
+    player.ammo = min(player.ammo + 2, 5);
+    for (let dy = 0; dy < 2; dy++) {
+      for (let dx = 0; dx < 2; dx++) {
+        if (maze[cellY + dy]?.[cellX + dx]?.hasProjectiles) {
+          maze[cellY + dy][cellX + dx].hasProjectiles = false;
+        }
+      }
+    }
+    projectileRooms = projectileRooms.filter(r => !(r.x === cellX && r.y === cellY));
+  }
+}
+
+function movePlayer(player, speed) {
+  let newX = player.x + cos(player.angle) * speed;
+  let newY = player.y + sin(player.angle) * speed;
+  let cellX = floor(newX);
+  let cellY = floor(newY);
+  if (cellX >= 0 && cellX < mazeWidth && cellY >= 0 && cellY < mazeHeight) {
+    if (!maze[cellY][cellX].north || maze[cellY][cellX].isOpen || newY >= cellY + 0.1)
+      if (!maze[cellY][cellX].south || maze[cellY][cellX].isOpen || newY <= cellY + 0.9)
+        if (!maze[cellY][cellX].east || maze[cellY][cellX].isOpen || newX <= cellX + 0.9)
+          if (!maze[cellY][cellX].west || maze[cellY][cellX].isOpen || newX >= cellX + 0.1) {
+            player.x = newX;
+            player.y = newY;
+          }
+  }
+}
+
+function burstThroughDoor(player) {
+  let cellX = floor(player.x);
+  let cellY = floor(player.y);
+  let angle = player.angle;
+  let testX = player.x + cos(angle) * 0.2;
+  let testY = player.y + sin(angle) * 0.2;
+  let testCellX = floor(testX);
+  let testCellY = floor(testY);
+  if (testCellX >= 0 && testCellX < mazeWidth && testCellY >= 0 && testCellY < mazeHeight) {
+    if (maze[testCellY][testCellX].north && testY < testCellY + 0.1 && maze[testCellY][testCellX].isDoor) {
+      maze[testCellY][testCellX].isOpen = true;
+    }
+    if (maze[testCellY][testCellX].south && testY > testCellY + 0.9 && maze[testCellY][testCellX].isDoor) {
+      maze[testCellY][testCellX].isOpen = true;
+    }
+    if (maze[testCellY][testCellX].east && testX > testCellX + 0.9 && maze[testCellY][testCellX].isDoor) {
+      maze[testCellY][testCellX].isOpen = true;
+    }
+    if (maze[testCellY][testCellX].west && testX < testCellX + 0.1 && maze[testCellY][testCellX].isDoor) {
+      maze[testCellY][testCellX].isOpen = true;
+    }
+  }
+}
+
+function updateDoorTimers() {
+  for (let y = 0; y < mazeHeight; y++) {
+    for (let x = 0; x < mazeWidth; x++) {
+      if (maze[y][x].isDoor && !maze[y][x].isOpen && doorTimers[maze[y][x].doorId]) {
+        if (millis() > doorTimers[maze[y][x].doorId]) {
+          maze[y][x].isOpen = true;
+        }
+      }
+    }
+  }
+}
+
+function updateProjectiles() {
+  let speed = 0.1;
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    let p = projectiles[i];
+    p.distance += speed;
+    p.x += cos(p.angle) * speed;
+    p.y += sin(p.angle) * speed;
+    let cellX = floor(p.x);
+    let cellY = floor(p.y);
+    if (cellX < 0 || cellX >= mazeWidth || cellY < 0 || cellY >= mazeHeight ||
+        (maze[cellY][cellX].north && p.y < cellY + 0.1 && (!maze[cellY][cellX].isDoor || !maze[cellY][cellX].isOpen)) ||
+        (maze[cellY][cellX].south && p.y > cellY + 0.9 && (!maze[cellY][cellX].isDoor || !maze[cellY][cellX].isOpen)) ||
+        (maze[cellY][cellX].east && p.x > cellX + 0.9 && (!maze[cellY][cellX].isDoor || !maze[cellY][cellX].isOpen)) ||
+        (maze[cellY][cellX].west && p.x < cellX + 0.1 && (!maze[cellY][cellX].isDoor || !maze[cellY][cellX].isOpen)) ||
+        p.distance > 10) {
+      projectiles.splice(i, 1);
+      continue;
+    }
+    let targets = p.owner === 'doubler' ? invader : [doubler];
+    for (let j = 0; j < targets.length; j++) {
+      if (!targets[j]) continue;
+      let dx = p.x - targets[j].x;
+      let dy = p.y - targets[j].y;
+      if (sqrt(dx * dx + dy * dy) < 0.2) {
+        if (p.owner === 'doubler') {
+          invaderScore++;
+          updateLeaderboards(invader[j].name, "invader", betAmount / numInvaders);
+          resetRound();
+        } else if (doubler.hasVest) {
+          doubler.hasVest = false;
+          inventory.vest = (inventory.vest || 0) - 1;
+          if (inventory.vest <= 0) delete inventory.vest;
+          localStorage.setItem('vaultInventory', JSON.stringify(inventory));
+        } else {
+          invaderScore++;
+          updateLeaderboards(invader[currentInvader].name, "invader", betAmount / numInvaders);
+          resetRound();
+        }
+        projectiles.splice(i, 1);
+        break;
+      }
+    }
+  }
+}
+
+function checkCollision() {
+  for (let i = 0; i < numInvaders; i++) {
+    let dx = invader[i].x - doubler.x;
+    let dy = invader[i].y - doubler.y;
+    if (sqrt(dx * dx + dy * dy) < 0.2) {
+      if (doubler.hasVest) {
+        doubler.hasVest = false;
+        inventory.vest = (inventory.vest || 0) - 1;
+        if (inventory.vest <= 0) delete inventory.vest;
+        localStorage.setItem('vaultInventory', JSON.stringify(inventory));
+      } else {
+        invaderScore++;
+        updateLeaderboards(invader[i].name, "invader", betAmount / numInvaders);
+        resetRound();
+      }
+    }
+  }
+}
+
+function checkExit() {
+  let dx = doubler.x - exit.x;
+  let dy = doubler.y - exit.y;
+  if (sqrt(dx * dx + dy * dy) < 0.2) {
+    doublerScore++;
+    updateLeaderboards(doubler.name, "doubler", investedAmount);
+    resetRound();
+  }
+}
+
+function checkTimeLimit() {
+  if (millis() - gameStartTime > timeLimit && !timeling) {
+    timeling = { x: random(mazeWidth), y: random(mazeHeight), name: "Grok the Timeling", targetIndex: 0 };
+    timelingChaseTime = millis();
+    timelingSoundPlayed = true;
+    fill(255, 0, 0);
+    rect(0, 0, width, height);
+  }
+  if (timeling && millis() - timelingChaseTime < 30000) {
+    let targets = invader.concat([doubler]);
+    let target = targets[timeling.targetIndex];
+    if (!target) {
+      timeling.targetIndex++;
+      if (timeling.targetIndex >= targets.length) {
+        resetRound();
+        return;
+      }
+      target = targets[timeling.targetIndex];
+    }
+    let path = aStar({ x: floor(timeling.x), y: floor(timeling.y) }, { x: floor(target.x), y: floor(target.y) });
+    if (path.length > 1) {
+      let next = path[1];
+      let dx = next.x + 0.5 - timeling.x;
+      let dy = next.y + 0.5 - timeling.y;
+      let angle = atan2(dy, dx);
+      let speed = 0.1;
+      let newX = timeling.x + cos(angle) * speed;
+      let newY = timeling.y + sin(angle) * speed;
+      let cellX = floor(newX);
+      let cellY = floor(newY);
+      if (cellX >= 0 && cellX < mazeWidth && cellY >= 0 && cellY < mazeHeight) {
+        if (!maze[cellY][cellX].north || maze[cellY][cellX].isOpen || newY >= cellY + 0.1)
+          if (!maze[cellY][cellX].south || maze[cellY][cellX].isOpen || newY <= cellY + 0.9)
+            if (!maze[cellY][cellX].east || maze[cellY][cellX].isOpen || newX <= cellX + 0.9)
+              if (!maze[cellY][cellX].west || maze[cellY][cellX].isOpen || newX >= cellX + 0.1) {
+                timeling.x = newX;
+                timeling.y = newY;
+              }
+      }
+      burstThroughDoor(timeling);
+    }
+  } else if (timeling && millis() - timelingChaseTime >= 30000) {
+    resetRound();
+  }
+}
+
+function updateLeaderboards(name, type, amount) {
+  let leaderboard = type === "invader" ? leaderboards.invaders : leaderboards.doublers;
+  let player = leaderboard.find(p => p.name === name);
+  if (!player) {
+    player = { name, wins: 0 };
+    leaderboard.push(player);
+  }
+  player.wins = (player.wins || 0) + 1;
+  let moneyPlayer = leaderboards.money.find(p => p.name === name);
+  if (!moneyPlayer) {
+    moneyPlayer = { name, amount: 0 };
+    leaderboards.money.push(moneyPlayer);
+  }
+  moneyPlayer.amount += amount;
+  leaderboards.invaders.sort((a, b) => b.wins - a.wins);
+  leaderboards.doublers.sort((a, b) => b.wins - a.wins);
+  leaderboards.money.sort((a, b) => b.amount - a.amount);
+}
+
+function resetRound() {
+  let doublerName = doubler.name;
+  invader = [
+    { x: 1.5, y: 1.5, angle: 0, name: "NPC_Invader1", ammo: 3 },
+    { x: 3.5, y: 3.5, angle: 0, name: "NPC_Invader2", ammo: 3 },
+    { x: 5.5, y: 5.5, angle: 0, name: "NPC_Invader3", ammo: 3 }
+  ];
+  currentInvader = 0;
+  doubler = { x: mazeWidth - 1.5, y: mazeHeight - 1.5, angle: 0, name: doublerName, ammo: 3, speedBoost: 1, hasVest: false };
+  exit = { x: mazeWidth / 2, y: mazeHeight / 2, revealed: inventory.exit > 0 };
+  projectiles = [];
+  timeling = null;
+  timelingChaseTime = 0;
+  timelingSoundPlayed = false;
+  lastShot = 0;
+  lastUpPress = 0;
+  gameStarted = false;
+  investedAmount = 103;
+  doorTimers = {};
+  console.log(`Reset: doubler=${doubler.name}, invaders=${invader.map(i => i.name).join(", ")}`);
+  generateMaze();
+}
+
+function keyPressed() {
+  if (keyCode === 9) {
+    currentInvader = (currentInvader + 1) % numInvaders;
+  }
+  if (keyCode === 77) {
+    moderatorView = !moderatorView;
+  }
+  if (keyCode === 13 && !gameStarted) {
+    gameStarted = true;
+    gameStartTime = millis();
+  }
+  if (keyCode === 86) {
+    document.getElementById('vault-store').style.display = document.getElementById('vault-store').style.display === 'block' ? 'none' : 'block';
+  }
+}
+</script>
+<div id="vault-store" style="display:none;">
+  <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:20px;">
+    <!-- Buttons will be dynamically generated by updateStoreIcons -->
+  </div>
+</div>
+<div id="overlay">
+  💰 $<span id="balance">0</span> • 🎒 <span id="items">0 items</span>
+</div>
+<script src="https://js.stripe.com/v3/"></script>
+<script>
+  const STRIPE_PK = "pk_live_51PX7wJHC3Ge5lJDSol3tzF3NkDm2B7YHKiKCRUUtQTTWMHKFQWkcRDwnuww3A7fYLHpVpt1t41O87vXWfRKM4g8K00obmihvAh"; // Replace with actual key
+  const QR_URL = "https://cash.app/$relli7"; // Replace with actual Cash App tag
+  const stripe = Stripe(STRIPE_PK);
+  let balance = 0;
+  let inventory = JSON.parse(localStorage.getItem('vaultInventory')) || {};
+
+  function openStore() { document.getElementById('vault-store').style.display = 'block'; }
+  function closeStore() { document.getElementById('vault-store').style.display = 'none'; }
+
+  const params = new URLSearchParams(window.location.search);
+  const item = params.get('paid');
+  if (item && ['time', 'ammo', 'speed', 'vest', 'exit', 'investment'].includes(item)) {
+    inventory[item] = (inventory[item] || 0) + 1;
+    balance += parseFloat({time:1.99, ammo:2.99, speed:1.49, vest:3.99, exit:4.99, investment:5.99}[item] || 0);
+    localStorage.setItem('vaultInventory', JSON.stringify(inventory));
+    alert(`✅ ${item} added to inventory!`);
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
+
+  setInterval(() => {
+    document.getElementById('balance').textContent = balance.toFixed(2);
+    document.getElementById('items').textContent = Object.keys(inventory).length + ' items';
+  }, 1000);
+</script>
+</body>
+</html>
